@@ -1,0 +1,31 @@
+{
+  "3E_synaptiq":  {
+                      "host": "hostname.synaptiq.example.com",
+                      "user": "user_synaptiq",
+                      "password": "password_synaptiq",
+                      "operator": "yield/inverter",
+                      "granularity": "15m"
+                  },
+  "time_parameters":   {
+                          "start_date": "yesterday",
+                          "end_date": "2016-12-31",
+                          "time_zone": "Europe/Zurich",
+                          "time_daylight_saving": "True"
+                       },
+  "mysql_connection":  {
+                            "host": "hostname.mysql.example.com",
+                            "port": "3306",
+                            "user": "user_mysql",
+                            "password": "password_mysql",
+                            "database": "db_name_mysql"
+                       },
+  "influxdb_connection": {
+                            "host": "hostname.influxdb.example.com",
+                            "port": "8086",
+                            "user": "user_influxdb",
+                            "password": "password_influxdb",
+                            "db": "db_name_influxdb",
+                            "measurement": "measurement_influxdb",
+                            "max_lines_per_insert": "5000"
+                          }
+}
