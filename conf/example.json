@@ -3,7 +3,7 @@
                       "host": "hostname.synaptiq.example.com",
                       "user": "user_synaptiq",
                       "password": "password_synaptiq",
-                      "operator": "yield/inverter",
+                      "indicator": "yield/inverter",
                       "granularity": "15m"
                   },
   "time_parameters":   {

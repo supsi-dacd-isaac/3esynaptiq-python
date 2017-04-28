@@ -64,8 +64,9 @@ class SynaptiqInterface:
         self.user = user
         self.password = password
         params = dict(userDetails=dict(username=self.user, password=self.password))
+        self.logger.info('Login request to %s' % self.url_login)
         r = requests.post(self.url_login, data=json.dumps(params))
-        self.logger.info('Login request to %s -> response status %i' % (self.url_login, r.status_code))
+        self.logger.info('Response status %i' % r.status_code)
         if r.status_code == 200:
             data = json.loads(r.text)
             self.session_id = data['sessionId']
@@ -80,21 +81,35 @@ class SynaptiqInterface:
         """
         if self.session_id is not None:
             data = dict(sessionId=self.session_id)
+            self.logger.info('Logout request to %s' % self.url_logout)
             r = requests.post(self.url_logout, data=json.dumps(data))
-            self.logger.info('Logout request to %s -> response status %i' % (self.url_logout, r.status_code))
+            self.logger.info('Response status %i' % r.status_code)
             if r.status_code == 200:
                 self.logger.info('Logout successful')
                 self.session_id = None
         else:
             self.logger.warning('Unable to logout')
 
-    def get_data(self, object_id, ts_from, ts_to, operator, granularity, tags):
+    def get_data(self, tags, ts_from, ts_to, granularity):
+        """ 
+        Get time-series datasets from 3E Synaptiq and save them in an InfluxDB database
+        @:param tags: InfluxDB tags
+        @:type tags: dictionary
+        @:param ts_from: starting UTC ts of time-series requested 
+        @:type ts_from: int
+        @:param ts_to: starting UTC ts of time-series requested
+        @:type ts_to: int        
+        @:param granularity: time-resolution of datasets (see 3E documentation for details)
+        @:type granularity: string  
+        @:return: HTTP request status
+        @:rtype: int                  
+        """
         params = {
                     'sessionId': self.session_id,
-                    'objectId': object_id,  # plant
+                    'objectId': tags['object_id'],  # plant
                     'requests': [
                                     {
-                                        'indicator': operator,
+                                        'indicator': tags['signal'],
                                         'granularity': granularity,
                                         'from': ts_from,
                                         'to': ts_to,
@@ -103,47 +118,45 @@ class SynaptiqInterface:
                                 ]
                 }
 
-        r_data = requests.post(self.url_getdata, data=json.dumps(params))
-        data = json.loads(r_data.text)
+        self.logger.info('Data request to %s' % self.url_logout)
+        r = requests.post(self.url_getdata, data=json.dumps(params))
+        if r.status_code == 200:
+            self.logger.info('Response status %i' % r.status_code)
+            data = json.loads(r.text)
 
-        for j in range(0, len(data['data'])):
-            str_desc_signal = '\"objectId=%s;indicator=%s\"' % (data['data'][j]['objectId'],
-                                                                data['data'][j]['indicator'])
-            if 'samples' in data['data'][j].keys():
-                self.logger.info('%s -> found %i samples' % (str_desc_signal, len(data['data'][j]['samples'])))
+            for j in range(0, len(data['data'])):
+                str_desc_signal = '\"objectId=%s;signal=%s\"' % (data['data'][j]['objectId'],
+                                                                    data['data'][j]['indicator'])
+                if 'samples' in data['data'][j].keys():
+                    self.logger.info('%s -> found %i samples' % (str_desc_signal, len(data['data'][j]['samples'])))
 
-                for k in range(0, len(data['data'][j]['samples'])):
-                    # Time management
-                    naive_time = datetime.datetime.fromtimestamp(data['data'][j]['samples'][k]['timestamp'] / 1e3)
-                    if self.dst == 'True':
-                        local_dt = self.tz.localize(naive_time, is_dst=True)
-                    else:
-                        local_dt = self.tz.localize(naive_time)
-                    utc_dt = local_dt.astimezone(pytz.utc)
+                    for k in range(0, len(data['data'][j]['samples'])):
+                        # Time management
+                        naive_time = datetime.datetime.fromtimestamp(data['data'][j]['samples'][k]['timestamp'] / 1e3)
+                        if self.dst == 'True':
+                            local_dt = self.tz.localize(naive_time, is_dst=True)
+                        else:
+                            local_dt = self.tz.localize(naive_time)
+                        utc_dt = local_dt.astimezone(pytz.utc)
 
-                    if 'min' in granularity:
-                        # Transform data from kWh to kW
-                        granularity_num = float(granularity[:-3])
-                        value = data['data'][j]['samples'][k]['value'] * 60 / granularity_num
-                    else:
-                        # For granularity >= 1h values are maintained in kWh
-                        value = data['data'][j]['samples'][k]['value']
+                        # Build point section
+                        point = {
+                                    'time': int(calendar.timegm(datetime.datetime.timetuple(utc_dt))),
+                                    'measurement': self.measurement,
+                                    'fields': dict(value=float(data['data'][j]['samples'][k]['value'])),
+                                    'tags': tags
+                                }
+                        self.influxdb_data_points.append(point)
 
-                    # Build point section
-                    point = {
-                                'time': int(calendar.timegm(datetime.datetime.timetuple(utc_dt))),
-                                'measurement': self.measurement,
-                                'fields': dict(value=value),
-                                'tags': tags
-                            }
-                    self.influxdb_data_points.append(point)
-
-                    if len(self.influxdb_data_points) >= int(self.max_lines_per_insert):
-                        self.logger.info('Sent %i points to InfluxDB server' % len(self.influxdb_data_points))
-                        self.idb_client.write_points(self.influxdb_data_points, time_precision='s')
-                        self.influxdb_data_points = []
-            else:
-                self.logger.warning('%s -> found 0 samples' % str_desc_signal)
+                        if len(self.influxdb_data_points) >= int(self.max_lines_per_insert):
+                            self.logger.info('Sent %i points to InfluxDB server' % len(self.influxdb_data_points))
+                            self.idb_client.write_points(self.influxdb_data_points, time_precision='s')
+                            self.influxdb_data_points = []
+                else:
+                    self.logger.warning('%s -> found 0 samples' % str_desc_signal)
 
             self.logger.info('Wait for 1 second')
             time.sleep(1)
+        else:
+            self.logger.warning('Response status %i' % r.status_code)
+        return r.status_code

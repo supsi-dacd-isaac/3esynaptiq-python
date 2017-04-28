@@ -13,6 +13,17 @@ from influxdb import InfluxDBClient
 
 from synaptiq_json_interface import SynaptiqInterface
 
+
+# --------------------------------------------------------------------------- #
+# Functions
+# --------------------------------------------------------------------------- #
+def send_remaining_data_and_exit(ex_code):
+    if len(si.influxdb_data_points) > 0:
+        logger.info('Sent %i points to InfluxDB server' % len(si.influxdb_data_points))
+        idb_client.write_points(si.influxdb_data_points, time_precision='s')
+    logger.warning('Exit program with code %i' % ex_code)
+    sys.exit(ex_code)
+
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
@@ -115,23 +126,33 @@ if __name__ == "__main__":
                     while curr_ts <= end_ts:
                         curr_dt = datetime.fromtimestamp(curr_ts/1e3)
                         curr_date = curr_dt.strftime('%Y-%m-%d')
-                        logger.info('Requesting data for day %s, plant=\"%s\", inverter=\"%s\"' % (curr_date,
-                                                                                                   cur['P_Name'],
-                                                                                                   cur['I_Name']))
+                        logger.info('Requesting data for day %s, plant=\"%s\";inverter=\"%s\";signal=\"%s\"'
+                                    % (curr_date, cur['P_Name'], cur['I_Name'], config['3E_synaptiq']['indicator']))
 
                         # Get plant data
                         if flag_plant_data is True:
-                            tags = dict(case='PLANT', object_id=cur['P_Id_3EObjectId'], object_name=cur['P_Name'])
-                            si.get_data(object_id=int(cur['P_Id_3EObjectId']), ts_from=curr_ts,
-                                        ts_to=(curr_ts + (86400 * 1e3)), operator=config['3E_synaptiq']['operator'],
-                                        granularity=config['3E_synaptiq']['granularity'], tags=tags)
+                            tags = dict(case='PLANT', object_id=cur['P_Id_3EObjectId'], object_name=cur['P_Name'],
+                                        signal=config['3E_synaptiq']['indicator'])
+                            req_status = si.get_data(tags=tags, ts_from=curr_ts, ts_to=(curr_ts + (86400 * 1e3)),
+                                                     granularity=config['3E_synaptiq']['granularity'])
+                            if req_status != 200:
+                                # Logout
+                                si.logout()
+                                # Send remaining data
+                                send_remaining_data_and_exit(-2)
 
                         # Get inverter data
                         # STILL TO TEST
-                        # tags = dict(case='INVERTER', object_id=cur['I_Id_3EObjectId'], object_name=cur['I_Name'])
-                        # si.get_data(object_id=int(cur['I_Id_3EObjectId']), ts_from=curr_ts,
-                        #             ts_to=(curr_ts + (86400 * 1e3)), operator=config['3E_synaptiq']['operator'],
-                        #             granularity=config['3E_synaptiq']['granularity'], tags=tags)
+                        # tags = dict(case='INVERTER', object_id=cur['I_Id_3EObjectId'], object_name=cur['I_Name'],
+                        #             signal=config['3E_synaptiq']['indicator'])
+                        # req_status = si.get_data(object_id=int(cur['I_Id_3EObjectId']), ts_from=curr_ts,
+                        #              ts_to=(curr_ts + (86400 * 1e3)), operator=config['3E_synaptiq']['operator'],
+                        #              granularity=config['3E_synaptiq']['granularity'], tags=tags)
+                        # if req_status != 200:
+                        #     # Logout
+                        #     si.logout()
+                        #     # Send remaining data
+                        #     send_remaining_data_and_exit(-2)
 
                         curr_ts += 86400 * 1e3
                         logger.info('Wait a second before exiting or doing a new request')
@@ -142,15 +163,13 @@ if __name__ == "__main__":
 
         # Logout
         si.logout()
-
-        if len(si.influxdb_data_points) > 0:
-            logger.info('Sent %i points to InfluxDB server' % len(si.influxdb_data_points))
-            idb_client.write_points(si.influxdb_data_points, time_precision='s')
-        logger.info('Exit program correctly with code 0')
+        # Send remaining data
+        send_remaining_data_and_exit(0)
 
     else:
-        logger.warning('Exit program with code -1')
-        sys.exit(-1)
+        exit_code = -1
+        logger.warning('Exit program with code %i' % exit_code)
+        sys.exit(exit_code)
 
 
 
