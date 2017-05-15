@@ -1,10 +1,15 @@
 # 3esynaptiq-python
 
-Script to get PV datasets from 3E Synaptiq web services and store them in an InfluxDB (https://www.influxdata.com/) DB.
+Scripts to get PV datasets from 3E Synaptiq web services and store them in an InfluxDB (https://www.influxdata.com/) DB.
 
-**Usage:**
+**Usage (device level see 3E documentation):**
 <pre>
-python3 bridge.py -c conf/example.json
+python3 getter_device_data.py -c conf/example_device_inverter.json
+</pre>
+
+**Usage (plant level):**
+<pre>
+python3 getter_plant_data.py -c conf/example_plant.json
 </pre>
 
 **Requirements:**
