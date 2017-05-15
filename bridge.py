@@ -24,6 +24,7 @@ def send_remaining_data_and_exit(ex_code):
     logger.warning('Exit program with code %i' % ex_code)
     sys.exit(ex_code)
 
+
 # --------------------------------------------------------------------------- #
 # Main
 # --------------------------------------------------------------------------- #
@@ -43,7 +44,7 @@ if __name__ == "__main__":
         log_file = None
     else:
         log_file = args.l
-    
+
     logger = logging.getLogger()
     logging.basicConfig(format='%(asctime)-15s::%(levelname)s::%(funcName)s::%(message)s', level=logging.INFO,
                         filename=log_file)
@@ -112,48 +113,28 @@ if __name__ == "__main__":
     req_status = si.login(user=config['3E_synaptiq']['user'], password=config['3E_synaptiq']['password'])
 
     if req_status == 200:
-        query = "SELECT P.Id AS P_Id, P.Id_3EObjectId AS P_Id_3EObjectId, P.Name AS P_Name, " + \
-                "I.Id AS I_Id, I.Id_3EObjectId AS I_Id_3EObjectId, I.Name AS I_Name " + \
-                "FROM 3e_plant AS P, 3e_inverter AS I WHERE P.Id=I.Id_Plant"
+        query = "SELECT Id, Id_3EObjectId, Name FROM 3e_plant WHERE Id=%s" % config['mysql_connection']['id_plant']
         cursor = mysql_conn.cursor(pymysql.cursors.DictCursor)
         try:
             with mysql_conn.cursor(pymysql.cursors.DictCursor) as cursor:
                 cursor.execute(query)
-                flag_plant_data = True
                 for cur in cursor.fetchall():
                     curr_ts = int(time.mktime(datetime.strptime(start_date, '%Y-%m-%d').timetuple())) * 1e3
                     end_ts = int(time.mktime(datetime.strptime(end_date, '%Y-%m-%d').timetuple())) * 1e3
                     while curr_ts <= end_ts:
-                        curr_dt = datetime.fromtimestamp(curr_ts/1e3)
+                        curr_dt = datetime.fromtimestamp(curr_ts / 1e3)
                         curr_date = curr_dt.strftime('%Y-%m-%d')
-                        logger.info('Requesting data for day %s, plant=\"%s\";inverter=\"%s\";signal=\"%s\"'
-                                    % (curr_date, cur['P_Name'], cur['I_Name'], config['3E_synaptiq']['indicator']))
+                        logger.info('Requesting data for day %s, plant=\"%s\";signal=\"%s\"'
+                                    % (curr_date, cur['Name'], config['3E_synaptiq']['indicator']))
 
                         # Get plant data
-                        if flag_plant_data is True:
-                            tags = dict(case='PLANT', object_id=cur['P_Id_3EObjectId'], object_name=cur['P_Name'],
-                                        signal=config['3E_synaptiq']['indicator'])
-                            req_status = si.get_data(tags=tags, ts_from=curr_ts, ts_to=(curr_ts + (86400 * 1e3)),
-                                                     granularity=config['3E_synaptiq']['granularity'])
-                            if req_status != 200:
-                                # Logout
-                                si.logout()
-                                # Send remaining data
-                                send_remaining_data_and_exit(-2)
-
-                        # Get inverter data
-                        # STILL TO TEST
-                        # tags = dict(case='INVERTER', object_id=cur['I_Id_3EObjectId'], object_name=cur['I_Name'],
-                        #             signal=config['3E_synaptiq']['indicator'])
-                        # req_status = si.get_data(object_id=int(cur['I_Id_3EObjectId']), ts_from=curr_ts,
-                        #              ts_to=(curr_ts + (86400 * 1e3)), operator=config['3E_synaptiq']['operator'],
-                        #              granularity=config['3E_synaptiq']['granularity'], tags=tags)
-                        # if req_status != 200:
-                        #     # Logout
-                        #     si.logout()
-                        #     # Send remaining data
-                        #     send_remaining_data_and_exit(-2)
-
+                        tags = dict(case='PLANT', object_id=cur['Id_3EObjectId'], object_name=cur['Name'],
+                                    signal=config['3E_synaptiq']['indicator'])
+                        req_status = si.get_data_plant(tags=tags, ts_from=curr_ts, ts_to=(curr_ts + (86400 * 1e3)),
+                                                       granularity=config['3E_synaptiq']['granularity'])
+                        if req_status != 200:
+                            si.logout()
+                            send_remaining_data_and_exit(-2)
                         curr_ts += 86400 * 1e3
                         logger.info('Wait a second before exiting or doing a new request')
                         time.sleep(1)
@@ -165,7 +146,6 @@ if __name__ == "__main__":
         si.logout()
         # Send remaining data
         send_remaining_data_and_exit(0)
-
     else:
         exit_code = -1
         logger.warning('Exit program with code %i' % exit_code)

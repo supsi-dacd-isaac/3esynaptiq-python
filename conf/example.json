@@ -17,7 +17,8 @@
                             "port": "3306",
                             "user": "user_mysql",
                             "password": "password_mysql",
-                            "database": "db_name_mysql"
+                            "database": "db_name_mysql",
+                            "id_plant": "-1"
                        },
   "influxdb_connection": {
                             "host": "hostname.influxdb.example.com",
