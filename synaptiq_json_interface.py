@@ -90,9 +90,9 @@ class SynaptiqInterface:
         else:
             self.logger.warning('Unable to logout')
 
-    def get_data(self, tags, ts_from, ts_to, granularity):
+    def get_data_plant(self, tags, ts_from, ts_to, granularity):
         """ 
-        Get time-series datasets from 3E Synaptiq and save them in an InfluxDB database
+        Get time-series datasets from 3E Synaptiq and save them in an InfluxDB database (plant)
         @:param tags: InfluxDB tags
         @:type tags: dictionary
         @:param ts_from: starting UTC ts of time-series requested 
@@ -117,8 +117,7 @@ class SynaptiqInterface:
                                     }
                                 ]
                 }
-
-        self.logger.info('Data request to %s' % self.url_logout)
+        self.logger.info('Data request to %s' % self.url_getdata)
         r = requests.post(self.url_getdata, data=json.dumps(params))
         if r.status_code == 200:
             self.logger.info('Response status %i' % r.status_code)
@@ -160,3 +159,67 @@ class SynaptiqInterface:
         else:
             self.logger.warning('Response status %i' % r.status_code)
         return r.status_code
+
+    def get_data_inverter(self, signal, ts_from, ts_to, granularity, inverters_data):
+        """ 
+        Get time-series datasets from 3E Synaptiq and save them in an InfluxDB database (inverter)
+        @:param signal: signal/indicator 
+        @:type signal: string        
+        @:param ts_from: starting UTC ts of time-series requested 
+        @:type ts_from: int
+        @:param ts_to: starting UTC ts of time-series requested
+        @:type ts_to: int        
+        @:param granularity: time-resolution of datasets (see 3E documentation for details)
+        @:type granularity: string        
+        @:param inverters_data: Inverters data
+        @:type inverters_data: dictionary
+        @:return: HTTP request status
+        @:rtype: int                  
+        """
+        for k in inverters_data.keys():
+            park_id = inverters_data[k]['park_id']
+            break
+
+        params = {
+                    'sessionId': self.session_id,
+                    'parkId': park_id,
+                    'level': 'Inverter',
+                    'requests': [
+                                    {
+                                        'indicator': signal,
+                                        'granularity': granularity,
+                                        'from': ts_from,
+                                        'to': ts_to,
+                                        'aggregated': 'false'
+                                    }
+                                ]
+                 }
+        self.logger.info('Data request to %s' % self.url_getdata)
+        r = requests.post(self.url_getdata, data=json.dumps(params))
+        if r.status_code == 200:
+            self.logger.info('Response status %i' % r.status_code)
+            data = json.loads(r.text)
+
+            for j in range(0, len(data['data'])):
+                tags = inverters_data[int(data['data'][j]['objectId'])]
+                tags['signal'] = signal
+                for k in range(0, len(data['data'][j]['samples'])):
+                    naive_time = datetime.datetime.fromtimestamp(data['data'][j]['samples'][k]['timestamp'] / 1e3)
+                    if self.dst == 'True':
+                        local_dt = self.tz.localize(naive_time, is_dst=True)
+                    else:
+                        local_dt = self.tz.localize(naive_time)
+                    utc_dt = local_dt.astimezone(pytz.utc)
+
+                    # Build point section
+                    point = {
+                                'time': int(calendar.timegm(datetime.datetime.timetuple(utc_dt))),
+                                'measurement': self.measurement,
+                                'fields': dict(value=float(data['data'][j]['samples'][k]['value'])),
+                                'tags': tags
+                            }
+                    self.influxdb_data_points.append(point)
+                    if len(self.influxdb_data_points) >= int(self.max_lines_per_insert):
+                        self.logger.info('Sent %i points to InfluxDB server' % len(self.influxdb_data_points))
+                        self.idb_client.write_points(self.influxdb_data_points, time_precision='s')
+                        self.influxdb_data_points = []
