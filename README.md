@@ -1,4 +1,4 @@
-# 3esynaptiq-python
+    # 3esynaptiq-python
 
 Scripts to get PV datasets from 3E Synaptiq web services and store them in an InfluxDB (https://www.influxdata.com/) DB.
 
