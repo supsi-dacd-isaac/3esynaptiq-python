@@ -201,28 +201,31 @@ class SynaptiqInterface:
             data = json.loads(r.text)
 
             for j in range(0, len(data['data'])):
-                tags = inverters_data[int(data['data'][j]['objectId'])]
-                tags['signal'] = signal
-                try:
-                    for k in range(0, len(data['data'][j]['samples'])):
-                        naive_time = datetime.datetime.fromtimestamp(data['data'][j]['samples'][k]['timestamp'] / 1e3)
-                        if self.dst == 'True':
-                            local_dt = self.tz.localize(naive_time, is_dst=True)
-                        else:
-                            local_dt = self.tz.localize(naive_time)
-                        utc_dt = local_dt.astimezone(pytz.utc)
+                if int(data['data'][j]['objectId']) in inverters_data:
+                    tags = inverters_data[int(data['data'][j]['objectId'])]
+                    tags['signal'] = signal
+                    try:
+                        for k in range(0, len(data['data'][j]['samples'])):
+                            naive_time = datetime.datetime.fromtimestamp(data['data'][j]['samples'][k]['timestamp'] / 1e3)
+                            if self.dst == 'True':
+                                local_dt = self.tz.localize(naive_time, is_dst=True)
+                            else:
+                                local_dt = self.tz.localize(naive_time)
+                            utc_dt = local_dt.astimezone(pytz.utc)
 
-                        # Build point section
-                        point = {
-                                    'time': int(calendar.timegm(datetime.datetime.timetuple(utc_dt))),
-                                    'measurement': self.measurement,
-                                    'fields': dict(value=float(data['data'][j]['samples'][k]['value'])),
-                                    'tags': tags
-                                }
-                        self.influxdb_data_points.append(point)
-                        if len(self.influxdb_data_points) >= int(self.max_lines_per_insert):
-                            self.logger.info('Sent %i points to InfluxDB server' % len(self.influxdb_data_points))
-                            self.idb_client.write_points(self.influxdb_data_points, time_precision='s')
-                            self.influxdb_data_points = []
-                except Exception as e:
-                    self.logger.error('Exception: %s' % str(e))
+                            # Build point section
+                            point = {
+                                        'time': int(calendar.timegm(datetime.datetime.timetuple(utc_dt))),
+                                        'measurement': self.measurement,
+                                        'fields': dict(value=float(data['data'][j]['samples'][k]['value'])),
+                                        'tags': tags
+                                    }
+                            self.influxdb_data_points.append(point)
+                            if len(self.influxdb_data_points) >= int(self.max_lines_per_insert):
+                                self.logger.info('Sent %i points to InfluxDB server' % len(self.influxdb_data_points))
+                                self.idb_client.write_points(self.influxdb_data_points, time_precision='s')
+                                self.influxdb_data_points = []
+                    except Exception as e:
+                        self.logger.error('Exception: %s' % str(e))
+                else:
+                    self.logger.warning('Object %s not found in DB' % data['data'][j]['objectId'])
